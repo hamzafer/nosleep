@@ -1,0 +1,88 @@
+#!/bin/bash
+# nosleep: toggle `pmset disablesleep` (stay awake, even lid closed).
+# Usage: nosleep [on [--for HOURS] | off | status | cancel]  (also: tick, remaining, batt)
+PMSET=/usr/bin/pmset
+STATE_DIR="${NOSLEEP_STATE_DIR:-$HOME/.local/state/nosleep}"
+PIDFILE="$STATE_DIR/timer.pid"
+DEADLINE="$STATE_DIR/deadline"
+SELF="$HOME/.local/bin/nosleep"
+BATT_MIN=20
+mkdir -p "$STATE_DIR"
+
+sleep_disabled() { "$PMSET" -g | awk '/SleepDisabled/ {print $2}' | grep -qx 1; }
+
+set_state() { # $1 = 1|0
+  if sudo -n "$PMSET" -a disablesleep "$1" 2>/dev/null; then return 0; fi
+  echo "Passwordless sudo not set up (run install.sh); asking for password." >&2
+  sudo "$PMSET" -a disablesleep "$1"
+}
+
+cancel_timer() {
+  if [ -f "$PIDFILE" ]; then
+    local p; p=$(cat "$PIDFILE" 2>/dev/null)
+    [ -n "$p" ] && [ "$p" != "$$" ] && kill "$p" 2>/dev/null
+  fi
+  rm -f "$PIDFILE" "$DEADLINE"
+}
+
+start_timer() { # $1 = hours (may be decimal)
+  local secs; secs=$(awk -v h="$1" 'BEGIN{printf "%d", h*3600}')
+  [ "$secs" -gt 0 ] 2>/dev/null || { echo "Invalid hours: $1" >&2; exit 2; }
+  echo $(( $(date +%s) + secs )) > "$DEADLINE"
+  ( nohup bash -c "sleep $secs; NOSLEEP_TIMER=1 '$SELF' off" >/dev/null 2>&1 </dev/null &
+    echo $! > "$PIDFILE" )
+}
+
+remaining() { # seconds left, or nothing
+  [ -f "$DEADLINE" ] || return 0
+  local left=$(( $(cat "$DEADLINE") - $(date +%s) ))
+  [ "$left" -gt 0 ] && echo "$left"
+  return 0
+}
+
+batt_pct() { "$PMSET" -g batt | grep -Eo '[0-9]+%' | head -1 | tr -d %; }
+on_battery() { "$PMSET" -g batt | head -1 | grep -q "Battery Power"; }
+
+do_on() {
+  local hours=""
+  if [ "$1" = "--for" ]; then hours="$2"; [ -n "$hours" ] || { echo "--for needs hours" >&2; exit 2; }; fi
+  cancel_timer
+  set_state 1 || exit 1
+  [ -n "$hours" ] && start_timer "$hours"
+  echo "Sleep disabled${hours:+ for ${hours}h}."
+}
+
+do_off() {
+  if [ -n "$NOSLEEP_TIMER" ]; then rm -f "$PIDFILE" "$DEADLINE"; else cancel_timer; fi
+  set_state 0 || exit 1
+  echo "Normal sleep restored."
+}
+
+# Plugin hook: expire stale timers (e.g. after reboot) and enforce battery guard.
+do_tick() {
+  if ! sleep_disabled; then rm -f "$PIDFILE" "$DEADLINE"; return 0; fi
+  if [ -f "$DEADLINE" ] && [ -z "$(remaining)" ]; then NOSLEEP_TIMER=1 do_off >/dev/null; return 0; fi
+  if on_battery; then
+    local pct; pct=$(batt_pct)
+    if [ -n "$pct" ] && [ "$pct" -lt "$BATT_MIN" ]; then
+      do_off >/dev/null
+      osascript -e "display notification \"Battery ${pct}%, normal sleep restored\" with title \"nosleep\"" >/dev/null 2>&1
+    fi
+  fi
+}
+
+case "$1" in
+  "")
+    if sleep_disabled; then echo "Current: sleep DISABLED (awake)."; tgt=off; q="Restore normal sleep"
+    else echo "Current: normal sleep."; tgt=on; q="Disable sleep (stay awake)"; fi
+    read -r -p "$q? [y/N] " a
+    case "$a" in [yY]*) "do_$tgt" ;; *) echo "Unchanged." ;; esac ;;
+  on) shift; do_on "$@" ;;
+  off) do_off ;;
+  cancel) cancel_timer; echo "Timer cancelled." ;;
+  status) if sleep_disabled; then echo awake; else echo normal; fi ;;
+  tick) do_tick ;;
+  remaining) remaining ;;
+  batt) batt_pct ;;
+  *) echo "Usage: nosleep [on [--for HOURS] | off | status | cancel]" >&2; exit 2 ;;
+esac
