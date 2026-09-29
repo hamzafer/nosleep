@@ -1,40 +1,57 @@
 # nosleep
 
-A menu-bar toggle for `pmset disablesleep`. It keeps your Mac awake even with the lid closed.
+Keep your Mac awake, even with the lid closed. One click in the menu bar.
 
-## Why not caffeinate
+😴 = normal sleep · 💀 = staying awake
 
-`caffeinate` doesn't survive closing the lid. `pmset disablesleep` does.
+## Why not caffeinate?
 
-## Install
+`caffeinate` stops working when you close the lid. `nosleep` uses `pmset disablesleep`, which keeps going.
 
-Needs [SwiftBar](https://github.com/swiftbar/SwiftBar).
+## Quick start
+
+Needs [SwiftBar](https://github.com/swiftbar/SwiftBar), a free app that shows scripts in the menu bar.
 
 ```
 brew install --cask swiftbar
 ./install.sh
 ```
 
-The installer asks for your password once, to write the sudoers rule.
+The installer asks for your password once. After that, nosleep never asks again.
 
-## Usage
+## Using it
 
-The menu bar shows 😴 for normal sleep and 💀 when sleep is disabled (with the time left if a timer is running). The menu has "Stay awake", timers for 1, 2, 4 and 8 hours, and "Cancel timer".
+Click the menu-bar icon:
+
+- **Stay awake** until you turn it off
+- **1, 2, 4 or 8 hours**, then back to normal sleep
+- **Cancel timer** (stays awake)
+
+While a timer runs, the icon shows the time left.
+
+Or use the terminal:
 
 ```
 nosleep on            # stay awake until turned off
 nosleep on --for 2    # stay awake for 2 hours (decimals work)
-nosleep off
+nosleep off           # back to normal sleep
 nosleep status        # prints awake or normal
 nosleep cancel        # cancel the timer, stay awake
 ```
 
+## Built-in safety
+
+- **Low battery:** below 20% on battery, nosleep turns itself off and tells you.
+- **Timers survive reboots:** the menu bar checks every 10 seconds, so an expired timer always gets cleaned up.
+- **Tight permissions:** the sudoers rule allows only `pmset -a disablesleep 1` and `0`, nothing else.
+
+⚠️ A closed Mac that never sleeps can get hot in a bag. Use a timer.
+
 ## How it works
 
-- Runs `sudo pmset -a disablesleep 1` or `0`.
-- The sudoers rule in `/etc/sudoers.d/nosleep` allows only those two exact commands, without a password.
-- A timer runs `nosleep off` when it expires. The plugin also checks every 10 seconds, so a timer that outlives a reboot is cleaned up.
-- On battery below 20%, the plugin restores normal sleep and sends a notification.
+- Turning it on runs `sudo pmset -a disablesleep 1`. Turning it off runs the same with `0`.
+- `/etc/sudoers.d/nosleep` lets those two exact commands run without a password.
+- A timer is a background process that runs `nosleep off` when time is up.
 
 ## Uninstall
 
@@ -42,11 +59,7 @@ nosleep cancel        # cancel the timer, stay awake
 ./uninstall.sh
 ```
 
-This restores `disablesleep 0` and removes everything the installer added.
-
-## Safety
-
-A closed Mac that never sleeps can get hot in a bag. Use a timer.
+Restores normal sleep and removes everything the installer added.
 
 ## License
 
