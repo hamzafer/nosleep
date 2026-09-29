@@ -2,7 +2,9 @@
 
 Keep your Mac awake, even with the lid closed. One click in the menu bar.
 
-😴 normal sleep · 💀 staying awake
+😴 normal sleep
+
+💀 staying awake
 
 ## Install
 
